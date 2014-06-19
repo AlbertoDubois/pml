@@ -1,0 +1,91 @@
+---
+title: "MLProject"
+output: html_document
+---
+
+# Practical Machine Learning Project
+## Data processing
+First we need to load the data:
+```{r cache=TRUE}
+train=read.csv("pml-training.csv")
+classe = as.factor(train$classe)
+
+#Keep numeric variables
+train.num = train[,sapply(train,is.numeric)]
+
+#Perform PCA analysis to reduce number of variables
+library(caret)
+preproc = preProcess(train.num,method='pca',pcaComp=10)
+train.pca = predict(preproc,train.num)
+train.pca = cbind(train.pca,classe)
+
+#Split into train and test for building the model and performing out of sample error
+library(caTools)
+split=sample.split(train.pca$classe,SplitRatio = 0.7)
+train.pca = subset(train.pca,split==1)
+test.pca = subset(train.pca,split==0)
+
+
+
+#In order to predict for the 20 test cases we need to perform the same changes to the test dataframe:
+
+test20=read.csv("pml-testing.csv")
+
+#Keep numeric variables
+test20.num = test20[,sapply(test20,is.numeric)]
+
+#Perform PCA analysis to reduce number of variables
+preproc20 = preProcess(test20.num,method='pca',pcaComp=10)
+test20.pca = predict(preproc20,test20.num)
+
+```
+
+## Model building
+Looking at the data we can see there are different types of variables and a large number of them. The easiest way to implement a machine learning algorithm would be a tree or a random forest (these algortihms automatically select which variables are more important). 
+
+We are going to train a classification tree despite of being less accurate than the random forest. This is done mainly for computation issues (very slow computer). As the purpose of this project is to demonstrate the capability of builiding a machine learning model the accuracy does not matter a lot.
+
+### Cross validation
+
+In order to perform cross-validation we are goin to tune the complexity parameter, to reduce the complexity of the model when needed. Any split that does not decrease the overall lack of fit by a factor of cp is not attempted.
+
+
+```{r cross-val,cache=TRUE}
+# Load cross-validation packages
+library(caret)
+library(e1071)
+
+# Define cross-validation experiment
+fitControl = trainControl( method = "cv", number = 10 )
+cartGrid = expand.grid( .cp = (1:50)*0.01) 
+
+# Perform the cross validation
+train(classe ~ ., data = train.pca, method = "rpart", trControl = fitControl, tuneGrid = cartGrid )
+```
+
+Having selected the complexity parameter with the lowest cross-validated error we can now build our model and predict the outcome for the Test cases:
+
+```{r class-tree}
+# Create a new CART model
+library(rpart)
+TreeCV = rpart(classe ~ ., method="class", data = train.pca, control=rpart.control(cp = 0.01))
+
+# Make predictions
+PredictCV = predict(TreeCV, newdata = test.pca, type = "class")
+
+library(rattle)
+fancyRpartPlot(TreeCV)
+```
+
+### Accuracy out of sample error
+```{r}
+library(caret)
+confusionMatrix(test.pca$classe,PredictCV)
+```
+
+## Predictions for the 20 test samples
+```{r }
+Predict20 = predict(TreeCV, newdata = test20.pca, type = "class")
+Predict20
+```
+
